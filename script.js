@@ -34,8 +34,18 @@ const subtotalValue = document.getElementById('subtotalValue');
 const shippingValue = document.getElementById('shippingValue');
 const totalValue = document.getElementById('totalValue');
 
-if (!form || !success || !resetBtn || !submitBtn || !quantityInput ||
-    !decreaseQty || !increaseQty || !subtotalValue || !shippingValue || !totalValue) {
+if (
+  !form ||
+  !success ||
+  !resetBtn ||
+  !submitBtn ||
+  !quantityInput ||
+  !decreaseQty ||
+  !increaseQty ||
+  !subtotalValue ||
+  !shippingValue ||
+  !totalValue
+) {
   console.error('Order form elements are missing from index.html.');
 }
 
@@ -53,8 +63,15 @@ function validTunisianMobile(value) {
 
 function getQuantity() {
   let quantity = Number.parseInt(quantityInput.value, 10);
-  if (!Number.isFinite(quantity)) quantity = MIN_QTY;
-  return Math.min(MAX_QTY, Math.max(MIN_QTY, quantity));
+
+  if (!Number.isFinite(quantity)) {
+    quantity = MIN_QTY;
+  }
+
+  return Math.min(
+    MAX_QTY,
+    Math.max(MIN_QTY, quantity)
+  );
 }
 
 function formatDT(value) {
@@ -65,15 +82,32 @@ function calculateTotals() {
   const quantity = getQuantity();
   const subtotal = quantity * UNIT_PRICE;
   const total = subtotal + SHIPPING;
-  return { quantity, subtotal, shipping: SHIPPING, total };
+
+  return {
+    quantity,
+    subtotal,
+    shipping: SHIPPING,
+    total
+  };
 }
 
 function updateTotals() {
-  const { quantity, subtotal, shipping, total } = calculateTotals();
+  const {
+    quantity,
+    subtotal,
+    shipping,
+    total
+  } = calculateTotals();
 
   quantityInput.value = quantity;
+
   subtotalValue.textContent = formatDT(subtotal);
-  shippingValue.textContent = formatDT(shipping);
+
+  // التوصيل مجاني
+  shippingValue.textContent = shipping === 0
+    ? 'مجاني'
+    : formatDT(shipping);
+
   totalValue.textContent = formatDT(total);
 
   decreaseQty.disabled = quantity <= MIN_QTY;
@@ -82,6 +116,7 @@ function updateTotals() {
 
 function setSubmitting(isSubmitting) {
   submitBtn.disabled = isSubmitting;
+
   submitBtn.textContent = isSubmitting
     ? 'جاري إرسال الطلب…'
     : '✅ إرسال الطلب';
@@ -105,20 +140,31 @@ updateTotals();
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
 
-  const data = Object.fromEntries(new FormData(form).entries());
+  const data = Object.fromEntries(
+    new FormData(form).entries()
+  );
+
   const quantity = getQuantity();
 
-  if (!data.name?.trim() || !data.phone?.trim() || !data.state?.trim() || !data.address?.trim()) {
+  // التحقق من البيانات المطلوبة
+  if (
+    !data.name?.trim() ||
+    !data.phone?.trim() ||
+    !data.state?.trim() ||
+    !data.address?.trim()
+  ) {
     alert('يرجى إكمال جميع المعلومات المطلوبة.');
     return;
   }
 
+  // التحقق من رقم الهاتف التونسي
   if (!validTunisianMobile(data.phone)) {
     alert('يرجى إدخال رقم هاتف تونسي صحيح من 8 أرقام.');
     return;
   }
 
   const normalizedPhone = cleanPhone(data.phone);
+
   const productTotal = quantity * UNIT_PRICE;
   const total = productTotal + SHIPPING;
 
@@ -127,9 +173,11 @@ form.addEventListener('submit', async (event) => {
   try {
     const response = await fetch(WORKER_URL, {
       method: 'POST',
+
       headers: {
         'Content-Type': 'application/json'
       },
+
       body: JSON.stringify({
         name: data.name.trim(),
         phone: normalizedPhone,
@@ -143,27 +191,56 @@ form.addEventListener('submit', async (event) => {
       })
     });
 
-    const result = await response.json().catch(() => ({}));
+    const result = await response
+      .json()
+      .catch(() => ({}));
 
+    // التأكد أن الطلب وصل بنجاح إلى Cloudflare Worker
     if (!response.ok || result.success !== true) {
-      throw new Error(result.message || 'تعذر إرسال الطلب.');
+      throw new Error(
+        result.message || 'تعذر إرسال الطلب.'
+      );
     }
 
+    // ==========================================
+    // Meta Pixel — Purchase
+    // يتم تسجيل Purchase فقط بعد نجاح إرسال الطلب
+    // ==========================================
+
+    if (typeof fbq === 'function') {
+      fbq('track', 'Purchase', {
+        value: total,
+        currency: 'TND'
+      });
+    }
+
+    // إخفاء الفورم وإظهار رسالة النجاح
     form.hidden = true;
     success.hidden = false;
-    success.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    success.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center'
+    });
 
   } catch (error) {
-    console.error('Order submission error:', error);
+    console.error(
+      'Order submission error:',
+      error
+    );
 
-    let message = error?.message || 'حدث خطأ أثناء إرسال الطلب.';
+    let message =
+      error?.message ||
+      'حدث خطأ أثناء إرسال الطلب.';
 
     // Helpful message for browser/CORS/network failures
     if (error instanceof TypeError) {
-      message = 'تعذر الاتصال بالخادم. تأكد من نشر Cloudflare Worker ومن تحديث الموقع على GitHub Pages.';
+      message =
+        'تعذر الاتصال بالخادم. تأكد من نشر Cloudflare Worker ومن تحديث الموقع على GitHub Pages.';
     }
 
     alert(message);
+
   } finally {
     setSubmitting(false);
   }
@@ -171,10 +248,14 @@ form.addEventListener('submit', async (event) => {
 
 resetBtn.addEventListener('click', () => {
   form.reset();
+
   quantityInput.value = MIN_QTY;
+
   updateTotals();
+
   form.hidden = false;
   success.hidden = true;
+
   document.getElementById('order')?.scrollIntoView({
     behavior: 'smooth',
     block: 'start'
